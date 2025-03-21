@@ -1,17 +1,17 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 import math
 from tkinter.simpledialog import askinteger
 
 class TSPApp:
     NODE_SIZE = 12
-    MIN_SPACING = 40
+    MIN_SPACING = 50
     SELECTION_RADIUS = 17
 
     def __init__(self, root):
         self.root = root
         self.root.title("Решение задачи маршрута")
-        self.root.geometry("1000x700")
+        self.root.geometry("1000x750")
 
         self.nodes = []
         self.connections = []
@@ -20,8 +20,7 @@ class TSPApp:
         self.node_id_tracker = 0
         self.active_node = None
         self.active_label_id = None
-        self.use_modification_var = tk.BooleanVar(value=True)  
-
+        self.use_modification_var = tk.BooleanVar(value=True)
 
         self._setup_ui()
         self._center_window()
@@ -68,7 +67,7 @@ class TSPApp:
         self.edge_table.heading("Cost", text="Вес")
         self.edge_table.pack(fill="both", expand=True)
         for col in ("From", "To", "Cost"):
-            self.edge_table.column(col, width=60, stretch=True)
+            self.edge_table.column(col, width=30, stretch=True)
         
         control_section = tk.LabelFrame(panel_right, text="Управление")
         control_section.grid(row=1, column=0, sticky="nsew")
@@ -76,6 +75,7 @@ class TSPApp:
         tk.Button(control_section, text="Найти маршрут", command=self._solve_tsp).pack(fill="x", expand=True)
         tk.Button(control_section, text="Назад", command=self._revert_last_step).pack(fill="x", expand=True)
         tk.Button(control_section, text="Сбросить", command=self._reset_all).pack(fill="x", expand=True)
+        tk.Button(control_section, text="Загрузить граф", command=self._load_graph).pack(fill="x", expand=True)
 
         self.result_container = tk.LabelFrame(panel_right, text="Итоги")
         self.result_container.grid(row=2, column=0, sticky="nsew")
@@ -90,6 +90,83 @@ class TSPApp:
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
+    def _load_graph(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if not file_path:
+            return
+
+        self._reset_all()  
+
+        try:
+            with open(file_path, 'r') as file:
+                lines = file.readlines()
+                nodes_section = False  
+                node_ids = set()
+
+     
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith('# Nodes'):
+                        nodes_section = True
+                        continue
+                    if line.startswith('# Edges'):
+                        nodes_section = False
+                        continue
+                    if not nodes_section:
+                        continue 
+
+                    parts = line.split(',')
+                    if len(parts) != 3:
+                        continue 
+
+                    try:
+                        node_id, x, y = map(int, parts)
+                        if node_id in node_ids:
+                            raise ValueError(f"Дублирующийся ID узла: {node_id}")
+                        node_ids.add(node_id)
+                        new_node = {"id": node_id, "x_coord": x, "y_coord": y}
+                        self.nodes.append(new_node)
+                        self.input_area.create_oval(x - self.NODE_SIZE, y - self.NODE_SIZE,
+                                                    x + self.NODE_SIZE, y + self.NODE_SIZE, fill="green")
+                        self.input_area.create_text(x, y, text=str(node_id), fill="white")
+                        self.history.append(("node_added", new_node, None, None))
+                        self.node_id_tracker = max(self.node_id_tracker, node_id)
+                    except ValueError:
+                        continue 
+
+                for line in lines:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if line.startswith('# Nodes'):
+                        continue  
+
+                    parts = line.split(',')
+                    if len(parts) != 3:
+                        continue
+
+                    try:
+                        from_id, to_id, weight = map(int, parts)
+                        if from_id not in node_ids or to_id not in node_ids:
+                            raise ValueError(f"Узел {from_id} или {to_id} не найден")
+                        start_node = next(n for n in self.nodes if n["id"] == from_id)
+                        end_node = next(n for n in self.nodes if n["id"] == to_id)
+                        link_id = self._render_directed_link(start_node, end_node)
+                        self.connections.append((from_id, to_id, weight, link_id))
+                        self.edge_table.insert("", "end", values=(from_id, to_id, weight))
+                        self.history.append(("link_added", (from_id, to_id, weight, link_id)))
+                    except ValueError:
+                        continue
+
+                if not self.nodes:
+                    raise ValueError("Файл не содержит узлов")
+                messagebox.showinfo("Успех", "Граф загружен!")
+        except Exception as e:
+            self._reset_all()
+            messagebox.showerror("Ошибка", f"Не удалось загрузить граф: {str(e)}")
+            
     def _place_node(self, event):
         pos_x, pos_y = event.x, event.y
         for node in self.nodes:
@@ -216,15 +293,12 @@ class TSPApp:
     def _choose_start_node(self, graph_data):
         min_cost = float('inf')
         start_node = None
-
-        # Ищем узел с минимальной стоимостью перехода к ближайшему соседу
         for node in self.nodes:
             if graph_data[node["id"]]:  
                 min_neighbor_cost = min(graph_data[node["id"]].values())
                 if min_neighbor_cost < min_cost:
                     min_cost = min_neighbor_cost
                     start_node = node
-
         return start_node if start_node else self.nodes[0]  
 
     def _solve_tsp(self):
@@ -235,7 +309,6 @@ class TSPApp:
             self.output_area.delete("all")
             return
         
-        # Строим граф
         graph_data = {node["id"]: {} for node in self.nodes}
         for link in self.connections:
             graph_data[link[0]][link[1]] = link[2]
@@ -256,29 +329,22 @@ class TSPApp:
             while len(current_route) < len(self.nodes):
                 smallest_cost = float('inf')
                 next_node_id = None
-
-                # Ищем ближайшего соседа
                 for neighbor, cost in graph_data[current["id"]].items():
                     if not visited_nodes[neighbor] and cost < smallest_cost:
                         smallest_cost = cost
                         next_node_id = neighbor
-
                 if next_node_id is None:
                     break
-
                 current_route.append(next_node_id)
                 total_cost += smallest_cost
                 visited_nodes[next_node_id] = True
                 current = next(n for n in self.nodes if n["id"] == next_node_id)
-
-            # Проверяем, можно ли вернуться в стартовый узел
             if len(current_route) == len(self.nodes) and start_node["id"] in graph_data[current["id"]]:
                 total_cost += graph_data[current["id"]][start_node["id"]]
                 if total_cost < min_total_cost:
                     min_total_cost = total_cost
                     optimal_route = current_route
 
-        # Отображаем результат
         if optimal_route:
             result_text = f"Оптимальный маршрут: {' → '.join(map(str, optimal_route))} → {optimal_route[0]}\nОбщая стоимость: {min_total_cost}"
             self._display_optimal_route(optimal_route, graph_data)
