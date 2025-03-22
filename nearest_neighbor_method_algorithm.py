@@ -2,6 +2,9 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import math
 from tkinter.simpledialog import askinteger
+import time  
+import random
+#import textwrap
 
 class TSPApp:
     NODE_SIZE = 12
@@ -38,20 +41,43 @@ class TSPApp:
         panel_left.grid_rowconfigure(1, weight=1)
         panel_left.grid_columnconfigure(0, weight=1)
 
+        # Граф ввода с ползунками
         input_section = tk.LabelFrame(panel_left, text="Граф ввода")
         input_section.grid(row=0, column=0, sticky="nsew")
-        self.input_area = tk.Canvas(input_section, bg="lightgray")
-        self.input_area.grid(row=0, column=0, sticky="nsew")
+        input_frame = tk.Frame(input_section)
+        input_frame.pack(fill="both", expand=True)
+
+        self.input_area = tk.Canvas(input_frame, bg="lightgray", width=500, height=500, scrollregion=(0, 0, 1000, 1000))
+        h_scrollbar_input = tk.Scrollbar(input_frame, orient="horizontal", command=self.input_area.xview)
+        v_scrollbar_input = tk.Scrollbar(input_frame, orient="vertical", command=self.input_area.yview)
+        self.input_area.configure(xscrollcommand=h_scrollbar_input.set, yscrollcommand=v_scrollbar_input.set)
+
+        h_scrollbar_input.pack(side="bottom", fill="x")
+        v_scrollbar_input.pack(side="right", fill="y")
+        self.input_area.pack(side="left", fill="both", expand=True)
+
         input_section.grid_rowconfigure(0, weight=1)
         input_section.grid_columnconfigure(0, weight=1)
 
+        # Граф результата с ползунками
         output_section = tk.LabelFrame(panel_left, text="Граф результата")
         output_section.grid(row=1, column=0, sticky="nsew")
-        self.output_area = tk.Canvas(output_section, bg="lightgray")
-        self.output_area.grid(row=0, column=0, sticky="nsew")
+        output_frame = tk.Frame(output_section)
+        output_frame.pack(fill="both", expand=True)
+
+        self.output_area = tk.Canvas(output_frame, bg="lightgray", width=500, height=500, scrollregion=(0, 0, 1000, 1000))
+        h_scrollbar_output = tk.Scrollbar(output_frame, orient="horizontal", command=self.output_area.xview)
+        v_scrollbar_output = tk.Scrollbar(output_frame, orient="vertical", command=self.output_area.yview)
+        self.output_area.configure(xscrollcommand=h_scrollbar_output.set, yscrollcommand=v_scrollbar_output.set)
+
+        h_scrollbar_output.pack(side="bottom", fill="x")
+        v_scrollbar_output.pack(side="right", fill="y")
+        self.output_area.pack(side="left", fill="both", expand=True)
+
         output_section.grid_rowconfigure(0, weight=1)
         output_section.grid_columnconfigure(0, weight=1)
 
+        # Панель справа
         panel_right = tk.Frame(core_frame)
         panel_right.grid(row=0, column=1, sticky="nsew")
         panel_right.grid_rowconfigure(0, weight=2)
@@ -59,7 +85,7 @@ class TSPApp:
         panel_right.grid_rowconfigure(2, weight=1)
         panel_right.grid_columnconfigure(0, weight=1)
 
-        edges_section = tk.LabelFrame(panel_right, text="Список связей")
+        edges_section = tk.LabelFrame(panel_right, text="Список рёбер")
         edges_section.grid(row=0, column=0, sticky="nsew")
         self.edge_table = ttk.Treeview(edges_section, columns=("From", "To", "Cost"), show="headings")
         self.edge_table.heading("From", text="Начало")
@@ -68,7 +94,7 @@ class TSPApp:
         self.edge_table.pack(fill="both", expand=True)
         for col in ("From", "To", "Cost"):
             self.edge_table.column(col, width=30, stretch=True)
-        
+
         control_section = tk.LabelFrame(panel_right, text="Управление")
         control_section.grid(row=1, column=0, sticky="nsew")
         ttk.Checkbutton(control_section, text="Использовать модификацию", variable=self.use_modification_var).pack(fill="x", expand=True)
@@ -77,7 +103,7 @@ class TSPApp:
         tk.Button(control_section, text="Сбросить", command=self._reset_all).pack(fill="x", expand=True)
         tk.Button(control_section, text="Загрузить граф", command=self._load_graph).pack(fill="x", expand=True)
 
-        self.result_container = tk.LabelFrame(panel_right, text="Итоги")
+        self.result_container = tk.LabelFrame(panel_right, text="Результат")
         self.result_container.grid(row=2, column=0, sticky="nsew")
         tk.Label(self.result_container, text="Ожидание").pack(fill="both", expand=True)
 
@@ -103,7 +129,6 @@ class TSPApp:
                 nodes_section = False  
                 node_ids = set()
 
-     
                 for line in lines:
                     line = line.strip()
                     if not line:
@@ -162,11 +187,16 @@ class TSPApp:
 
                 if not self.nodes:
                     raise ValueError("Файл не содержит узлов")
+                
+                max_x = max(node["x_coord"] for node in self.nodes) + self.NODE_SIZE
+                max_y = max(node["y_coord"] for node in self.nodes) + self.NODE_SIZE
+                self.input_area.configure(scrollregion=(0, 0, max_x, max_y))
+                
                 messagebox.showinfo("Успех", "Граф загружен!")
         except Exception as e:
             self._reset_all()
             messagebox.showerror("Ошибка", f"Не удалось загрузить граф: {str(e)}")
-            
+    
     def _place_node(self, event):
         pos_x, pos_y = event.x, event.y
         for node in self.nodes:
@@ -258,13 +288,12 @@ class TSPApp:
                                               arrow=tk.LAST, fill="black", width=2, 
                                               arrowshape=(8, 8, 4))
         return link_id
-
     def _display_optimal_route(self, route, graph_data):
         self.output_area.delete("all")
         for node_id in route:
             node = next(n for n in self.nodes if n["id"] == node_id)
             self.output_area.create_oval(node["x_coord"] - self.NODE_SIZE, node["y_coord"] - self.NODE_SIZE, 
-                                         node["x_coord"] + self.NODE_SIZE, node["y_coord"] + self.NODE_SIZE, fill="green")
+                                        node["x_coord"] + self.NODE_SIZE, node["y_coord"] + self.NODE_SIZE, fill="green")
             self.output_area.create_text(node["x_coord"], node["y_coord"], text=str(node_id), fill="white")
         for i in range(len(route) - 1):
             start_node = next(n for n in self.nodes if n["id"] == route[i])
@@ -273,6 +302,10 @@ class TSPApp:
         start_node = next(n for n in self.nodes if n["id"] == route[-1])
         end_node = next(n for n in self.nodes if n["id"] == route[0])
         self._render_link_on_output(start_node, end_node)
+        
+        max_x = max(node["x_coord"] for node in self.nodes if node["id"] in route) + self.NODE_SIZE
+        max_y = max(node["y_coord"] for node in self.nodes if node["id"] in route) + self.NODE_SIZE
+        self.output_area.configure(scrollregion=(0, 0, max_x, max_y))
 
     def _render_link_on_output(self, start, end):
         dx = end["x_coord"] - start["x_coord"]
@@ -299,8 +332,8 @@ class TSPApp:
                 if min_neighbor_cost < min_cost:
                     min_cost = min_neighbor_cost
                     start_node = node
-        return start_node if start_node else self.nodes[0]  
-
+        return start_node if start_node else random.choice(self.nodes) 
+    
     def _solve_tsp(self):
         for widget in self.result_container.winfo_children():
             widget.destroy()
@@ -317,7 +350,9 @@ class TSPApp:
         min_total_cost = float('inf')
 
         use_modification = self.use_modification_var.get()
-        start_nodes = self.nodes if use_modification else [self._choose_start_node(graph_data)] 
+        start_nodes = self.nodes if use_modification else [self._choose_start_node(graph_data)]
+
+        start_time = time.perf_counter()
 
         for start_node in start_nodes:
             visited_nodes = {n["id"]: False for n in self.nodes}
@@ -345,11 +380,30 @@ class TSPApp:
                     min_total_cost = total_cost
                     optimal_route = current_route
 
+        end_time = time.perf_counter()
+        execution_time = (end_time - start_time) * 1000
+        
         if optimal_route:
-            result_text = f"Оптимальный маршрут: {' → '.join(map(str, optimal_route))} → {optimal_route[0]}\nОбщая стоимость: {min_total_cost}"
+            route_str = [str(node) for node in optimal_route]
+            chunk_size = 7
+            route_lines = []
+            for i in range(0, len(route_str), chunk_size):
+                chunk = route_str[i:i + chunk_size]
+                route_lines.append(" → ".join(chunk))
+            if route_lines:
+                route_lines[-1] += f" → {optimal_route[0]}"
+            
+            route_text = "\n".join(route_lines)
+            
+            result_text = (
+                f"Оптимальный маршрут:\n"
+                f"{route_text}\n"
+                f"Общая стоимость: {min_total_cost}\n"
+                f"Время выполнения: {execution_time:.2f} мс"
+            )
             self._display_optimal_route(optimal_route, graph_data)
         else:
-            result_text = "Маршрут не найден"
+            result_text = f"Маршрут не найден\nВремя выполнения: {execution_time:.2f} мс"
             self.output_area.delete("all")
         tk.Label(self.result_container, text=result_text).pack(fill="both", expand=True)
 
