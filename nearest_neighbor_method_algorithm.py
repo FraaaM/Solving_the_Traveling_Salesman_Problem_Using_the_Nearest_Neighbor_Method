@@ -4,7 +4,6 @@ import math
 from tkinter.simpledialog import askinteger
 import time  
 import random
-#import textwrap
 
 class TSPApp:
     NODE_SIZE = 12
@@ -24,6 +23,8 @@ class TSPApp:
         self.active_node = None
         self.active_label_id = None
         self.use_modification_var = tk.BooleanVar(value=True)
+        self.optimal_route = None 
+        self.result_text = ""      
 
         self._setup_ui()
         self._center_window()
@@ -41,7 +42,6 @@ class TSPApp:
         panel_left.grid_rowconfigure(1, weight=1)
         panel_left.grid_columnconfigure(0, weight=1)
 
-        # Граф ввода с ползунками
         input_section = tk.LabelFrame(panel_left, text="Граф ввода")
         input_section.grid(row=0, column=0, sticky="nsew")
         input_frame = tk.Frame(input_section)
@@ -59,7 +59,6 @@ class TSPApp:
         input_section.grid_rowconfigure(0, weight=1)
         input_section.grid_columnconfigure(0, weight=1)
 
-        # Граф результата с ползунками
         output_section = tk.LabelFrame(panel_left, text="Граф результата")
         output_section.grid(row=1, column=0, sticky="nsew")
         output_frame = tk.Frame(output_section)
@@ -77,7 +76,6 @@ class TSPApp:
         output_section.grid_rowconfigure(0, weight=1)
         output_section.grid_columnconfigure(0, weight=1)
 
-        # Панель справа
         panel_right = tk.Frame(core_frame)
         panel_right.grid(row=0, column=1, sticky="nsew")
         panel_right.grid_rowconfigure(0, weight=2)
@@ -102,6 +100,7 @@ class TSPApp:
         tk.Button(control_section, text="Назад", command=self._revert_last_step).pack(fill="x", expand=True)
         tk.Button(control_section, text="Сбросить", command=self._reset_all).pack(fill="x", expand=True)
         tk.Button(control_section, text="Загрузить граф", command=self._load_graph).pack(fill="x", expand=True)
+        tk.Button(control_section, text="Скачать результат", command=self._save_result).pack(fill="x", expand=True)
 
         self.result_container = tk.LabelFrame(panel_right, text="Результат")
         self.result_container.grid(row=2, column=0, sticky="nsew")
@@ -241,7 +240,7 @@ class TSPApp:
                         if existing_link_idx != -1:
                             old_weight = self.connections[existing_link_idx][2]
                             new_weight = askinteger("Вес связи", 
-                                                    f"Связь {self.active_node['id']} → {node['id']} существует. Вес: {old_weight}\nНовый вес:")
+                                                    f"Связь {self.active_node['id']} -> {node['id']} существует. Вес: {old_weight}\nНовый вес:")
                             if new_weight is not None:
                                 old_link = self.connections[existing_link_idx]
                                 self.connections[existing_link_idx] = (self.active_node["id"], node["id"], new_weight, old_link[3])
@@ -254,7 +253,7 @@ class TSPApp:
                             self.active_label_id = None
                             return
 
-                        weight = askinteger("Вес связи", f"Укажите вес для связи {self.active_node['id']} → {node['id']}:")
+                        weight = askinteger("Вес связи", f"Укажите вес для связи {self.active_node['id']} -> {node['id']}:")
                         if weight is None:
                             return
 
@@ -288,6 +287,7 @@ class TSPApp:
                                               arrow=tk.LAST, fill="black", width=2, 
                                               arrowshape=(8, 8, 4))
         return link_id
+
     def _display_optimal_route(self, route, graph_data):
         self.output_area.delete("all")
         for node_id in route:
@@ -346,7 +346,7 @@ class TSPApp:
         for link in self.connections:
             graph_data[link[0]][link[1]] = link[2]
 
-        optimal_route = None
+        self.optimal_route = None 
         min_total_cost = float('inf')
 
         use_modification = self.use_modification_var.get()
@@ -378,34 +378,74 @@ class TSPApp:
                 total_cost += graph_data[current["id"]][start_node["id"]]
                 if total_cost < min_total_cost:
                     min_total_cost = total_cost
-                    optimal_route = current_route
+                    self.optimal_route = current_route
 
         end_time = time.perf_counter()
         execution_time = (end_time - start_time) * 1000
         
-        if optimal_route:
-            route_str = [str(node) for node in optimal_route]
+        if self.optimal_route:
+            route_str = [str(node) for node in self.optimal_route]
             chunk_size = 7
             route_lines = []
             for i in range(0, len(route_str), chunk_size):
                 chunk = route_str[i:i + chunk_size]
-                route_lines.append(" → ".join(chunk))
+                route_lines.append(" -> ".join(chunk))
             if route_lines:
-                route_lines[-1] += f" → {optimal_route[0]}"
+                route_lines[-1] += f" -> {self.optimal_route[0]}" 
             
-            route_text = "\n".join(route_lines)
+            route_text = route_lines[0]  
+            for line in route_lines[1:]:
+                route_text += f"\n-> {line}"
             
-            result_text = (
+            self.result_text = (
                 f"Оптимальный маршрут:\n"
                 f"{route_text}\n"
                 f"Общая стоимость: {min_total_cost}\n"
                 f"Время выполнения: {execution_time:.2f} мс"
             )
-            self._display_optimal_route(optimal_route, graph_data)
+            self._display_optimal_route(self.optimal_route, graph_data)
         else:
-            result_text = f"Маршрут не найден\nВремя выполнения: {execution_time:.2f} мс"
+            self.result_text = f"Маршрут не найден\nВремя выполнения: {execution_time:.2f} мс"
             self.output_area.delete("all")
-        tk.Label(self.result_container, text=result_text).pack(fill="both", expand=True)
+        tk.Label(self.result_container, text=self.result_text).pack(fill="both", expand=True)
+
+    def _save_result(self):
+        if not self.optimal_route and "Маршрут не найден" in self.result_text:
+            messagebox.showwarning("Предупреждение", "Нет оптимального маршрута для сохранения!")
+            return
+
+        file_path = filedialog.asksaveasfilename(defaultextension=".txt",
+                                                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+                                                title="Сохранить результат")
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, 'w', encoding="utf-8") as file:
+                file.write("# Nodes\n")
+                if self.optimal_route:
+                    for node_id in self.optimal_route:
+                        node = next(n for n in self.nodes if n["id"] == node_id)
+                        file.write(f"{node['id']},{node['x_coord']},{node['y_coord']}\n")
+                
+                file.write("# Edges\n")
+                if self.optimal_route:
+                    for i in range(len(self.optimal_route) - 1):
+                        start_id = self.optimal_route[i]
+                        end_id = self.optimal_route[i + 1]
+                        weight = next((link[2] for link in self.connections if link[0] == start_id and link[1] == end_id), 0)
+                        file.write(f"{start_id},{end_id},{weight}\n")
+                    start_id = self.optimal_route[-1]
+                    end_id = self.optimal_route[0]
+                    weight = next((link[2] for link in self.connections if link[0] == start_id and link[1] == end_id), 0)
+                    file.write(f"{start_id},{end_id},{weight}\n")
+
+                file.write("# Result Info\n")
+                file.write(self.result_text)
+
+            messagebox.showinfo("Успех", "Результат успешно сохранён!")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось сохранить результат: {str(e)}")
 
     def _revert_last_step(self):
         if not self.history:
@@ -449,6 +489,8 @@ class TSPApp:
         if self.active_label_id:
             self.input_area.delete(self.active_label_id)
             self.active_label_id = None
+        self.optimal_route = None
+        self.result_text = ""
         for widget in self.result_container.winfo_children():
             widget.destroy()
         tk.Label(self.result_container, text="Очищено").pack(fill="both", expand=True)
